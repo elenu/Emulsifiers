@@ -1,0 +1,209 @@
+---
+title: "Anxiety Z-score linear model"
+author: "Elena Eyre, PhD"
+date: '2022-02-01'
+output:
+  html_document:
+    toc: yes
+    toc_float: yes
+    theme: united
+  word_document:
+    toc: yes
+  pdf_document:
+    toc: yes
+#urlcolor: tomato
+linkcolor: steelblue2
+fontsize: 8 pt
+---
+
+# 1. Loadings
+
+## 1.1 Load packages
+
+I uploaded packages of necessary functions to perform the calculations.
+
+```{r, setup}
+knitr::opts_chunk$set(warning=FALSE)
+package_to_load <- c("readxl", "dplyr", "ggplot2", "tidyr", "dplyr","RColorBrewer")
+for (package in package_to_load) {
+  require(package, character.only = T); packageVersion(package)
+}
+extra_to_load <- c("knitr","stringr", "stringi", "ggrepel","ggpubr", "ggbreak","reshape2","lme4","multcomp","car","lsmeans")
+for (package in extra_to_load) {
+  require(package, character.only = T); packageVersion(package)
+}
+#rm(package_to_load, extra_to_load)
+```
+
+## 1.2 Load data
+
+```{r}
+df_original <- read_excel("220128_Analysis_adapted_Elena.xlsx")
+anxiety_raw_dlb <- df_original[df_original$Experiment == "Dark Light Box",]
+anxiety_raw_epm <- df_original[df_original$Experiment == "Elevate Pluse Maze",]
+```
+
+# 2. Previous to Z-score
+
+Before the Z-score, we need to calculate control means and standard deviation.
+
+For the Dark-light box experiment I make sure to select the center type:
+```{r}
+male_c_mean_dlb <- mean(anxiety_raw_dlb$Value[anxiety_raw_dlb$Sex == "M" & anxiety_raw_dlb$Diet == "CTRL"]) 
+male_c_sd_dlb <- sd(anxiety_raw_dlb$Value[anxiety_raw_dlb$Sex == "M" & anxiety_raw_dlb$Diet == "CTRL"])
+female_c_mean_dlb <- mean(anxiety_raw_dlb$Value[anxiety_raw_dlb$Sex == "F" & anxiety_raw_dlb$Diet == "CTRL"])
+female_c_sd_dlb <- sd(anxiety_raw_dlb$Value[anxiety_raw_dlb$Sex == "F" & anxiety_raw_dlb$Diet == "CTRL"])
+```
+
+For the Elevated Plus Maze adulthood experiment:
+```{r}
+male_c_mean_epm <- mean(anxiety_raw_epm$Value[anxiety_raw_epm$Sex == "M" & anxiety_raw_epm$Diet == "CTRL"]) 
+male_c_sd_epm <- sd(anxiety_raw_epm$Value[anxiety_raw_epm$Sex == "M" & anxiety_raw_epm$Diet == "CTRL"])
+female_c_mean_epm <- mean(anxiety_raw_epm$Value[anxiety_raw_epm$Sex == "F" & anxiety_raw_epm$Diet == "CTRL"])
+female_c_sd_epm <- sd(anxiety_raw_epm$Value[anxiety_raw_epm$Sex == "F" & anxiety_raw_epm$Diet == "CTRL"])
+```
+
+# 3. Calculate the Z-scores for each subset and experiment
+
+To speed up the process, I created a function to calculate the z-score: zscore_gender(). It will return a vector of values corresponding to the z-scores associated to the subset we selected.
+```{r}
+zscore_gender <- function(data_frame,gender, mean_control,sd_control){
+  d <- as.data.frame(data_frame[data_frame$Sex == gender & data_frame$Diet == "Emul",])
+  d$z_score_male_of <-sapply(d$Value, function(x){
+  (x - mean_control)/sd_control
+  })
+  return(d)
+  }
+```
+
+For the Dark-light box experiment:
+```{r}
+z_score_male_dlb <-  zscore_gender(anxiety_raw_dlb, "M", male_c_mean_dlb, male_c_sd_dlb)
+z_score_female_dlb <-  zscore_gender(anxiety_raw_dlb, "F", female_c_mean_dlb, female_c_sd_dlb)
+```
+
+For the Elevated Plus Maze adulthood (12-13 weeks) experiment:
+```{r}
+z_score_male_epm <-  zscore_gender(anxiety_raw_epm, "M", male_c_mean_epm, male_c_sd_epm)
+z_score_female_epm <-  zscore_gender(anxiety_raw_epm, "F", female_c_mean_epm, female_c_sd_epm)
+```
+
+# 4. Visualize the Z-scores for each subset and experiment
+
+In order to siplify the results, we join all the results into a new table, save it in a .txt file, and split it in order to define the data we want to show in a plot:
+```{r}
+df1 <- data.frame(rbind(z_score_male_dlb,z_score_female_dlb,z_score_male_epm,z_score_female_epm))
+names(df1)[8] <- "Z_score"
+kable(df1[1:4,],format = "simple",caption = "Reordered data table (with mothers and pups)") #%>% kable_styling(full_width = F, position = "left")%>%column_spec(1, bold = T)
+write.table(df1, "Values_gender_Zscores_all_anxiety_experiments_withMothers_and_diets.txt", sep = "|", dec = ".", row.names = F)
+
+df2_dlb <- df1[df1$Experiment == "Dark Light Box", ]
+df2_epm <- df1[df1$Experiment == "Elevate Pluse Maze", ]
+```
+
+Plots:
+```{r, fig.width=12, fig.height=4}
+set.seed(123) # Due to I apply a statistics analysis to extract the p-value from a t-test, I make sure to not bias it by adding this se.seed( ) function.
+g2 <- ggplot(df2_dlb, aes(x=as.factor(Sex), y=Z_score)) + geom_boxplot(aes(x=as.factor(Sex),fill = as.factor(Sex))) + xlab("Sex") + ylab("Z-score") + ggtitle("Dark-light box experiment") + theme_classic()+ labs(fill= "Sex")+ stat_compare_means(method = "t.test")
+g3 <- ggplot(df2_epm, aes(x=as.factor(Sex), y=Z_score)) + geom_boxplot(aes(x=as.factor(Sex),fill = as.factor(Sex))) + xlab("Sex") + ylab("Z-score") + ggtitle("Elevated Plus Maze experiment") + theme_classic()+ labs(fill= "Sex")+ stat_compare_means(method = "t.test")
+ggarrange(g2, g3, ncol = 3, nrow = 1)
+pdf("Boxplots_gender_Zscores_anxiety_experiments_individually_MP.pdf", width = 5, height = 4)
+g2
+g3
+dev.off()
+pdf("Boxplots_gender_Zscores_all_anxiety_experiments_MP.pdf", width = 11, height = 4)
+ggarrange(g2, g3, ncol = 3, nrow = 1)
+dev.off()
+##Before calculating the z-score:
+g5 <- ggplot(anxiety_raw_dlb, aes(x=as.factor(Diet), y=Value)) + geom_boxplot(aes(x=as.factor(Diet),fill = as.factor(Sex))) + xlab("Diet") + ylab("Time spent in light (%)") + ggtitle("Dark-light box adulthood experiment") + theme_classic()+ labs(fill= "Sex")#+ stat_compare_means(method = "t.test")
+g6 <- ggplot(anxiety_raw_epm, aes(x=as.factor(Diet), y=Value)) + geom_boxplot(aes(x=as.factor(Diet),fill = as.factor(Sex))) + xlab("Diet") + ylab("Time in zone (%)") + ggtitle("Elevated Plus Maze experiment") + theme_classic()+ labs(fill= "Sex")#+ stat_compare_means(method = "t.test")
+pdf("Boxplots_gender_raw_data_anxiety_experiments_MP.pdf", width = 11, height = 4)
+ggarrange(g5, g6, ncol = 3, nrow = 1)
+dev.off()
+ggarrange(g5, g6, ncol = 3, nrow = 1)
+```
+
+# 5. Anxiety Z-score for only Females vs Males
+
+I explore the outcome if we take the Chow group as the corresponding control group, and we would like to compare only Gender, I develop another z-score formula:
+
+Then, we follow the line as Guilloux et al did in their paper (doi:10.1016/j.jneumeth.2011.01.019), and we callculated individual anxiety scores by averaging z-score values across tests (leveraging the potential biases nduced by a single test). As they did, an emotionally z-score was calculated for each animal based on 3 different tests:
+
+$Anxiety~Score = (Z_DLB + Z_EPM) / Number~of~tests$
+
+```{r, fig.width=5, fig.height=4}
+df3m <- NULL
+df3f <- NULL
+df3m$Anx_Zscore <- (df1$Z_score[df1$Experiment == "Dark Light Box" & df1$Sex == "M"] + df1$Z_score[df1$Experiment == "Elevate Pluse Maze" & df1$Sex == "M"])/2
+df3f$Anx_Zscore <- ( df1$Z_score[df1$Experiment == "Dark Light Box" & df1$Sex == "F"] + df1$Z_score[df1$Experiment == "Elevate Pluse Maze" & df1$Sex == "F"])/2
+df3m$Sex <- "M"
+df3f$Sex <- "F"
+df3 <- as.data.frame(rbind(as.data.frame(df3m),as.data.frame(df3f)))
+#df3 <- reshape2::melt(df3,variable.name = "Subsets",value.name = "Anx_Zscore")
+write.table(df3, "Zscores_all_anxiety_experiments.txt", sep = "|", dec = ".", row.names = F)
+g7 <- ggplot(df3, aes(x=as.factor(Sex), y=Anx_Zscore)) + geom_boxplot(aes(x=as.factor(Sex),fill = as.factor(Sex))) + xlab("Sex") + ylab("Anxiety Score\n(Z-score)") + ggtitle("Anxiety score") + theme_classic()+ labs(fill= "Sex")+ stat_compare_means(method = "t.test")
+g7
+pdf("Boxplots_gender_anxiety_final_score_experiments.pdf", width = 5, height = 4)
+g7
+dev.off()
+```
+
+# 6. Anxiety Z-score for Emul vs CT (and Gender)
+
+Since the authors of the paper take the males group and the corresponding control group, and we would like to compare only diets, I develop another z-score formula:
+
+```{r}
+zscore <- function(data_frame,mean_control,sd_control){
+  d <- as.data.frame(data_frame)
+  d$z_score_male_of <-sapply(d$Value, function(x){
+  (x - mean_control)/sd_control
+  })
+  }
+```
+
+Here I apply the formula using the males group and the corresponding control group, to each experiment:
+
+```{r}
+anxiety_raw_dlb$zscores <- zscore(anxiety_raw_dlb,male_c_mean_dlb,male_c_sd_dlb)
+anxiety_raw_epm$zscores <- zscore(anxiety_raw_epm,male_c_mean_epm,male_c_sd_epm)
+
+df5 <- rbind(anxiety_raw_dlb,anxiety_raw_epm)
+df5 <- df5[df5$Sex != "F",]
+df6 <- data.frame(DLB = df5[df5$Experiment =="Dark Light Box", ],EPM = df5[df5$Experiment =="Elevate Pluse Maze", ])
+df6$Anx_zscore <- (df6$DLB.zscores + df6$EPM.zscores)/3
+df6 <- df6[,c(2,3,6,7,17)] 
+colnames(df6) <- c("Sex","Treatment","Mother", "Diet","Anx_zscore")
+
+ggplot(df6, aes(x=as.factor(Diet), y=Anx_zscore)) + geom_boxplot(mapping= aes(x=as.factor(Diet), y=Anx_zscore,fill=as.factor(Diet)))+ xlab("Diet") + ylab("Anxiety Score\n(Z-score)")+labs(fill="Diet") + ggtitle("Anxiety score") +geom_point(pch = 21, position = position_jitterdodge(), aes(x=as.factor(Diet),fill = as.factor(Diet)))+ theme_classic()+ stat_compare_means(aes(x=as.factor(Diet), y=Anx_zscore),method = "t.test")
+
+write.table(df6, "Anxiety_Zscores_only_males.txt", sep = "|", dec = ".", row.names = F)
+```
+
+Then, I apply the formula using the both, males and females group and the corresponding control group, to each experiment: the final outcome suggest there is no significant changes.
+
+$Value = (1 | Mother) + Sex + Diet + Sex*Diet$
+
+```{r, fig.width=9, fig.height=4}
+anxiety_raw_dlb$zscores <- ifelse(anxiety_raw_dlb$Sex == "M", zscore(anxiety_raw_dlb,male_c_mean_dlb,male_c_sd_dlb), zscore(anxiety_raw_dlb,female_c_mean_dlb,female_c_sd_dlb))
+anxiety_raw_epm$zscores <- ifelse(anxiety_raw_epm$Sex == "M", zscore(anxiety_raw_epm,male_c_mean_epm,male_c_sd_epm), zscore(anxiety_raw_epm,female_c_mean_epm,female_c_sd_epm))
+
+df5 <- rbind(anxiety_raw_dlb,anxiety_raw_epm)
+df6 <- data.frame(DLB = df5[df5$Experiment =="Dark Light Box", ],EPM = df5[df5$Experiment =="Elevate Pluse Maze", ])
+df6$Anx_zscore <- (df6$DLB.zscores + df6$EPM.zscores)/3
+df6 <- df6[,c(2,3,6,7,17)] 
+colnames(df6) <- c("Sex","Treatment","Mother", "Diet","Anx_zscore")
+write.table(df6, "Anxiety_Zscores_both_malesAndFemales.txt", sep = "|", dec = ".", row.names = F)
+
+ggplot(df6, aes(x=as.factor(Sex), y=Anx_zscore)) + geom_boxplot(mapping= aes(x=as.factor(Sex), y=Anx_zscore,fill=as.factor(Diet)))+scale_y_continuous() + xlab("Sex") + ylab("Anxiety Score\n(Z-score)")+labs(fill="Diet") + ggtitle("Anxiety score") +geom_point(pch = 21, position = position_jitterdodge(), aes(x=as.factor(Sex),fill = as.factor(Diet)))+ theme_classic()+stat_compare_means(aes(x=as.factor(Sex), y=Anx_zscore,fill = as.factor(Diet)),method = "t.test")
+
+fit_mf3 <- lmer(Anx_zscore ~ (1 | Mother) + Sex +  Diet + Sex*Diet, data=df6) 
+Anova(fit_mf3, test ="Chisq", type="III", error.estimate = "deviance")
+print(summary(fit_mf3))
+tuk <- glht(fit_mf3, limfct = mcp(Diet = "Tukey")) # To obtain the details of the single variable
+print(summary(tuk))
+tuk <- glht(fit_mf3, limfct = mcp(Sex = "Tukey")) # To obtain the details of the single variable
+print(summary(tuk))
+plot(confint(tuk)) 
+kable(as.data.frame(lsmeans(fit_mf3, pairwise~Sex*Diet, adjust="tukey")$contrasts)[,c(1,6)], caption = "Pairwise comparisons")
+```
+
